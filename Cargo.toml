@@ -4,3 +4,4 @@ version = "0.1.0"
 authors = ["Nathan Wilcox <nathan@z.cash>"]
 
 [dependencies]
+hashstore = { git = "https://github.com/nejucomo/hashstore.git" }
