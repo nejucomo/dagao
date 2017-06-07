@@ -1,5 +1,6 @@
+use std::{io, fs};
 use std::path::{Path, PathBuf};
-use hashstore::{HashInserter, HashStore};
+use hashstore::{Hash, HashInserter, HashStore};
 
 
 pub struct DagaoStore {
@@ -8,6 +9,11 @@ pub struct DagaoStore {
 }
 
 impl DagaoStore {
+    pub fn create_std(basedir: &Path) -> io::Result<DagaoStore> {
+        DagaoStore::create(basedir.join("index").as_path(),
+                           try!(HashStore::create(basedir.join("store").as_path())))
+    }
+
     pub fn create(indexdir: &Path, hashstore: HashStore) -> io::Result<DagaoStore> {
         match fs::create_dir(indexdir) {
             Ok(()) => {}
@@ -23,8 +29,13 @@ impl DagaoStore {
         DagaoStore::open(indexdir, hashstore)
     }
 
+    pub fn open_std(basedir: &Path) -> io::Result<DagaoStore> {
+        DagaoStore::open(basedir.join("index").as_path(),
+                         try!(HashStore::open(basedir.join("store").as_path())))
+    }
+
     pub fn open(indexdir: &Path, hashstore: HashStore) -> io::Result<DagaoStore> {
-        match fs::read_dir(dir) {
+        match fs::read_dir(indexdir) {
             Err(e) => Err(e),
             Ok(_) => {
                 Ok(DagaoStore {
@@ -54,18 +65,13 @@ impl DagaoStore {
     }
 
     pub fn has_hash(&self, hash: &Hash) -> io::Result<bool> {
-        use std::io::ErrorKind;
-
-        match self.open_reader(hash) {
-            Ok(_) => Ok(true),
-            Err(ref e) if e.kind() == ErrorKind::NotFound => Ok(false),
-            Err(e) => Err(e),
-        }
+        self.hstore.has_hash(hash)
     }
 }
 
 
-const LINK_NODE_HEADER: &[u8] = "dagao 0\n".as_bytes();
+const LINK_NODE_HEADER: &'static [u8] = b"dagao 0\n";
+const LINK_NODE_HEADER_LEN: usize = 8; // Is there a better way?
 
 
 pub struct LinkNodeInserter<'a> {
@@ -73,7 +79,9 @@ pub struct LinkNodeInserter<'a> {
 }
 
 impl<'a> LinkNodeInserter<'a> {
-    fn init(hins: HashInserter<'a>) -> io::Result<LinkNodeInserter<'a>> {
+    fn init(mut hins: HashInserter<'a>) -> io::Result<LinkNodeInserter<'a>> {
+        use std::io::Write;
+
         let n = try!(hins.write(LINK_NODE_HEADER));
         if n == LINK_NODE_HEADER.len() {
             Ok(LinkNodeInserter { hins: hins })
@@ -92,9 +100,12 @@ pub struct LinkNodeReader {
 }
 
 impl LinkNodeReader {
-    fn wrap_file(mut f: fs::file) -> io::Result<LinkNodeReader> {
-        let mut buf = &[0u8; LINK_NODE_HEADER.len()];
-        let n = try!(f.read(&mut buf));
+    fn wrap_file(mut f: fs::File) -> io::Result<LinkNodeReader> {
+        use std::borrow::BorrowMut;
+        use std::io::Read;
+
+        let mut buf = [0u8; LINK_NODE_HEADER_LEN];
+        let n = try!(f.read(buf.borrow_mut()));
         if n == LINK_NODE_HEADER.len() && buf == LINK_NODE_HEADER {
             Ok(LinkNodeReader { f: f })
         } else {
@@ -107,5 +118,69 @@ impl LinkNodeReader {
 
 #[cfg(test)]
 mod tests {
-    // FIXME
+    use std::path::Path;
+
+    tests_with_fs! {
+        create_new_dir |path: &Path| {
+            use std::{fs, io};
+            use DagaoStore;
+
+            let exists_as_dir = |p| {
+                match fs::metadata(p) {
+                    Ok(md) => {
+                        md.is_dir()
+                    }
+                    Err(e) => {
+                        assert_eq!(e.kind(), io::ErrorKind::NotFound);
+                        false
+                    }
+                }
+            };
+
+            assert!(!exists_as_dir(path));
+
+            res_unwrap!(DagaoStore::create_std(path));
+
+            assert!(exists_as_dir(path));
+            assert!(exists_as_dir(path.join("index").as_path()));
+            assert!(exists_as_dir(path.join("store").as_path()));
+        };
+
+        open_non_existent_dir |path: &Path| {
+            use std::io;
+            use hashstore::HashStore;
+
+            let res = HashStore::open(path);
+
+            assert!(res.is_err());
+            assert!(res.err().unwrap().kind() == io::ErrorKind::NotFound);
+        };
+
+        /*
+        insert_empty_linknode |path: &Path| {
+            use std::fs;
+            use std::io::Read;
+            use hashstore::{HashStore, EMPTY_HASH};
+            use dagaostore::{DagaoStore};
+
+            let expectedhash = "";
+
+            let ds = res_unwrap!(DagaoStore::create_std(path));
+
+            let ins = res_unwrap!(ds.open_leafnode_inserter());
+            let hash = res_unwrap!(ins.commit());
+            assert_eq!(expectedhash, hash.encoded());
+
+            let mut pb = path.to_path_buf();
+            pb.push("nodes");
+            pb.push(expectedhash);
+            assert!(res_unwrap!(fs::metadata(pb)).is_file());
+
+            let mut lnr = res_unwrap!(ds.open_linknode_reader(&hash));
+            assert_eq!(None, res_unwrap!(lnr.next()));
+
+            assert!(res_unwrap!(ds.has_hash(&hash)));
+        }
+        */
+    }
 }

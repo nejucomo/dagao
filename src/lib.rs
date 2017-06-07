@@ -2,8 +2,11 @@
 
 extern crate hashstore;
 
+#[cfg(test)]
+#[macro_use]
+mod testutils;
+
 mod dagaostore;
 
 // Library Public API:
-pub use hashstore::{Hash, Hasher};
-pub use dagaostore::{DagaoInserter, DagaoStore};
+pub use dagaostore::DagaoStore;
