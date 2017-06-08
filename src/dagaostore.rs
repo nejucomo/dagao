@@ -10,22 +10,13 @@ pub struct DagaoStore {
 
 impl DagaoStore {
     pub fn create_std(basedir: &Path) -> io::Result<DagaoStore> {
+        try!(ensure_dir_exists(basedir));
         DagaoStore::create(basedir.join("index").as_path(),
                            try!(HashStore::create(basedir.join("store").as_path())))
     }
 
     pub fn create(indexdir: &Path, hashstore: HashStore) -> io::Result<DagaoStore> {
-        match fs::create_dir(indexdir) {
-            Ok(()) => {}
-            Err(e) => {
-                match e.kind() {
-                    io::ErrorKind::AlreadyExists => {
-                        // Fine, no problem.
-                    }
-                    _ => return Err(e),
-                }
-            }
-        }
+        try!(ensure_dir_exists(indexdir));
         DagaoStore::open(indexdir, hashstore)
     }
 
@@ -116,6 +107,22 @@ impl LinkNodeReader {
 }
 
 
+fn ensure_dir_exists(p: &Path) -> io::Result<()> {
+    match fs::create_dir(p) {
+        Ok(()) => { Ok(()) }
+        Err(e) => {
+            match e.kind() {
+                io::ErrorKind::AlreadyExists => {
+                    // Fine, no problem.
+                    Ok(())
+                }
+                _ => Err(e),
+            }
+        }
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -125,7 +132,7 @@ mod tests {
             use std::{fs, io};
             use DagaoStore;
 
-            let exists_as_dir = |p| {
+            let exists_as_dir = |p: &Path| {
                 match fs::metadata(p) {
                     Ok(md) => {
                         md.is_dir()
@@ -154,7 +161,7 @@ mod tests {
 
             assert!(res.is_err());
             assert!(res.err().unwrap().kind() == io::ErrorKind::NotFound);
-        };
+        }
 
         /*
         insert_empty_linknode |path: &Path| {
