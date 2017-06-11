@@ -1,5 +1,5 @@
 use std::io;
-use std::fs::File;
+use std::io::Read;
 use hashstore::{HASH_BYTES, Hash};
 
 
@@ -14,7 +14,7 @@ const REFERENCE_BYTES: usize = HASH_BYTES + 1;
 
 
 impl Reference {
-    pub fn read_from_file(f: &mut File) -> io::Result<Option<Reference>> {
+    pub fn read_from_file<R: Read>(f: &mut R) -> io::Result<Option<Reference>> {
         use std::borrow::BorrowMut;
         use ioutil::read_full;
         use hashstore::{HASH_BYTES, Hash};

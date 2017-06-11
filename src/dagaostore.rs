@@ -47,9 +47,9 @@ impl DagaoStore {
         datanode::Inserter::wrap_hash_inserter(hins)
     }
 
-    pub fn open_datanode_reader(&self, r: &Reference) -> io::Result<datanode::Reader> {
+    pub fn open_datanode_reader(&self, r: &Reference) -> io::Result<datanode::FileReader> {
         try!(require_reftype(RefType::Data, r));
-        datanode::Reader::wrap_file(try!(self.hstore.open_reader(&r.hash)))
+        datanode::Reader::wrap_read(try!(self.hstore.open_reader(&r.hash)))
     }
 
     pub fn open_linknode_inserter(&self) -> io::Result<linknode::Inserter> {
@@ -57,10 +57,10 @@ impl DagaoStore {
         linknode::Inserter::wrap_hash_inserter(hins)
     }
 
-    pub fn open_linknode_reader(&self, r: &Reference) -> io::Result<linknode::Reader> {
+    pub fn open_linknode_reader(&self, r: &Reference) -> io::Result<linknode::FileReader> {
         try!(require_reftype(RefType::Link, r));
         let f = try!(self.hstore.open_reader(&r.hash));
-        linknode::Reader::wrap_file(f)
+        linknode::Reader::wrap_read(f)
     }
 
     pub fn has_ref(&self, r: &Reference) -> io::Result<bool> {

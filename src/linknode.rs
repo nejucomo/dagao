@@ -1,4 +1,5 @@
 use std::{io, fs};
+use std::io::Read;
 use hashstore::HashInserter;
 use {Reference, RefType};
 
@@ -36,12 +37,14 @@ impl<'a> Inserter<'a> {
 }
 
 
-pub struct Reader {
-    f: fs::File,
+pub struct Reader<R> {
+    f: R,
 }
 
-impl Reader {
-    pub fn wrap_file(mut f: fs::File) -> io::Result<Reader> {
+pub type FileReader = Reader<fs::File>;
+
+impl<R: Read> Reader<R> {
+    pub fn wrap_read(mut f: R) -> io::Result<Reader<R>> {
         use std::borrow::BorrowMut;
         use ioutil::read_full;
 

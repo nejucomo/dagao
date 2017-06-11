@@ -23,18 +23,20 @@ impl<'a> Inserter<'a> {
 }
 
 
-pub struct Reader(fs::File);
+pub struct Reader<R>(R);
+
+pub type FileReader = Reader<fs::File>;
 
 
-impl Reader {
-    pub fn wrap_file(f: fs::File) -> io::Result<Reader> {
+impl<R> Reader<R> {
+    pub fn wrap_read(f: R) -> io::Result<Reader<R>> {
         Ok(Reader(f))
     }
 }
 
 
 // Can't find newtype derivation yet, so boilerplate:
-impl io::Read for Reader {
+impl<R: io::Read> io::Read for Reader<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.0.read(buf)
     }
