@@ -1,10 +1,15 @@
 use std::{io, fs};
 use std::path::{Path, PathBuf};
-use hashstore::{Hash, HashInserter, HashStore};
+use hashstore::HashStore;
+use {Reference, RefType};
+use datanode;
+use linknode;
 
 
 pub struct DagaoStore {
+    #[allow(dead_code)]
     indexdir: PathBuf,
+
     hstore: HashStore,
 }
 
@@ -37,72 +42,29 @@ impl DagaoStore {
         }
     }
 
-    pub fn open_leafnode_inserter(&self) -> io::Result<HashInserter> {
-        self.hstore.open_inserter()
-    }
-
-    pub fn open_leafnode_reader(&self, hash: &Hash) -> io::Result<fs::File> {
-        self.hstore.open_reader(hash)
-    }
-
-    pub fn open_linknode_inserter(&self) -> io::Result<LinkNodeInserter> {
+    pub fn open_datanode_inserter(&self) -> io::Result<datanode::Inserter> {
         let hins = try!(self.hstore.open_inserter());
-        LinkNodeInserter::init(hins)
+        datanode::Inserter::wrap_hash_inserter(hins)
     }
 
-    pub fn open_linknode_reader(&self, hash: &Hash) -> io::Result<LinkNodeReader> {
-        let f = try!(self.hstore.open_reader(hash));
-        LinkNodeReader::wrap_file(f)
+    pub fn open_datanode_reader(&self, r: &Reference) -> io::Result<datanode::Reader> {
+        try!(require_reftype(RefType::Data, r));
+        datanode::Reader::wrap_file(try!(self.hstore.open_reader(&r.hash)))
     }
 
-    pub fn has_hash(&self, hash: &Hash) -> io::Result<bool> {
-        self.hstore.has_hash(hash)
+    pub fn open_linknode_inserter(&self) -> io::Result<linknode::Inserter> {
+        let hins = try!(self.hstore.open_inserter());
+        linknode::Inserter::wrap_hash_inserter(hins)
     }
-}
 
-
-const LINK_NODE_HEADER: &'static [u8] = b"dagao 0\n";
-const LINK_NODE_HEADER_LEN: usize = 8; // Is there a better way?
-
-
-pub struct LinkNodeInserter<'a> {
-    hins: HashInserter<'a>,
-}
-
-impl<'a> LinkNodeInserter<'a> {
-    fn init(mut hins: HashInserter<'a>) -> io::Result<LinkNodeInserter<'a>> {
-        use std::io::Write;
-
-        let n = try!(hins.write(LINK_NODE_HEADER));
-        if n == LINK_NODE_HEADER.len() {
-            Ok(LinkNodeInserter { hins: hins })
-        } else {
-            // FIXME Handle 0 < n < LINK_NODE_HEADER.len().
-            use std::io::{Error, ErrorKind};
-            Err(Error::new(ErrorKind::WriteZero,
-                           "could not write header in single write"))
-        }
+    pub fn open_linknode_reader(&self, r: &Reference) -> io::Result<linknode::Reader> {
+        try!(require_reftype(RefType::Link, r));
+        let f = try!(self.hstore.open_reader(&r.hash));
+        linknode::Reader::wrap_file(f)
     }
-}
 
-
-pub struct LinkNodeReader {
-    f: fs::File,
-}
-
-impl LinkNodeReader {
-    fn wrap_file(mut f: fs::File) -> io::Result<LinkNodeReader> {
-        use std::borrow::BorrowMut;
-        use std::io::Read;
-
-        let mut buf = [0u8; LINK_NODE_HEADER_LEN];
-        let n = try!(f.read(buf.borrow_mut()));
-        if n == LINK_NODE_HEADER.len() && buf == LINK_NODE_HEADER {
-            Ok(LinkNodeReader { f: f })
-        } else {
-            use std::io::{Error, ErrorKind};
-            Err(Error::new(ErrorKind::InvalidData, "header unrecognized"))
-        }
+    pub fn has_ref(&self, r: &Reference) -> io::Result<bool> {
+        self.hstore.has_hash(&r.hash)
     }
 }
 
@@ -119,6 +81,18 @@ fn ensure_dir_exists(p: &Path) -> io::Result<()> {
                 _ => Err(e),
             }
         }
+    }
+}
+
+
+fn require_reftype(rt: RefType, r: &Reference) -> io::Result<()> {
+    if r.reftype == rt {
+        Ok(())
+    } else {
+        use std::io::{Error, ErrorKind};
+
+        Err(Error::new(ErrorKind::InvalidInput,
+                       format!("Expected {:?} reference, found {:?}.", rt, r)))
     }
 }
 
@@ -161,33 +135,60 @@ mod tests {
 
             assert!(res.is_err());
             assert!(res.err().unwrap().kind() == io::ErrorKind::NotFound);
-        }
+        };
 
-        /*
-        insert_empty_linknode |path: &Path| {
+        insert_empty_datanode |path: &Path| {
             use std::fs;
             use std::io::Read;
-            use hashstore::{HashStore, EMPTY_HASH};
-            use dagaostore::{DagaoStore};
-
-            let expectedhash = "";
+            use hashstore::{EMPTY_HASH};
+            use {DagaoStore, RefType};
 
             let ds = res_unwrap!(DagaoStore::create_std(path));
-
-            let ins = res_unwrap!(ds.open_leafnode_inserter());
-            let hash = res_unwrap!(ins.commit());
-            assert_eq!(expectedhash, hash.encoded());
+            let ins = res_unwrap!(ds.open_datanode_inserter());
+            let href = res_unwrap!(ins.commit());
+            println!("href {:?}, EMPTY_HASH {:?}", href, EMPTY_HASH);
+            assert_eq!(RefType::Data, href.reftype);
+            assert_eq!(EMPTY_HASH, href.hash.encoded());
 
             let mut pb = path.to_path_buf();
-            pb.push("nodes");
-            pb.push(expectedhash);
+            pb.push("store");
+            pb.push(EMPTY_HASH);
+            println!("pb {:?}", pb);
             assert!(res_unwrap!(fs::metadata(pb)).is_file());
 
-            let mut lnr = res_unwrap!(ds.open_linknode_reader(&hash));
-            assert_eq!(None, res_unwrap!(lnr.next()));
+            let mut f = res_unwrap!(ds.open_datanode_reader(&href));
+            let mut contents = String::new();
+            let readlen = res_unwrap!(f.read_to_string(&mut contents));
+            assert_eq!(0, readlen);
+            assert_eq!("", contents);
 
-            assert!(res_unwrap!(ds.has_hash(&hash)));
+            assert!(res_unwrap!(ds.has_ref(&href)));
+        };
+
+        insert_empty_linknode |path: &Path| {
+            use std::fs;
+            use {DagaoStore, RefType};
+
+            const EMPTY_LINKNODE: &'static str = "PJJ13v6y0SzJ88yEvzH5ng7qAYURX3omv4NFJYG35fQ";
+
+            let ds = res_unwrap!(DagaoStore::create_std(path));
+            let ins = res_unwrap!(ds.open_linknode_inserter());
+            let href = res_unwrap!(ins.commit());
+            println!("href {:?}", href);
+            assert_eq!(RefType::Link, href.reftype);
+            assert_eq!(EMPTY_LINKNODE, href.hash.encoded());
+
+            let mut pb = path.to_path_buf();
+            pb.push("store");
+            pb.push(EMPTY_LINKNODE);
+            println!("pb {:?}", pb);
+            assert!(res_unwrap!(fs::metadata(pb)).is_file());
+
+            let mut lnr = res_unwrap!(ds.open_linknode_reader(&href));
+            let link = res_unwrap!(lnr.read_next());
+            assert_eq!(None, link);
+
+            assert!(res_unwrap!(ds.has_ref(&href)));
         }
-        */
     }
 }
