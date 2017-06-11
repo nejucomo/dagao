@@ -1,5 +1,5 @@
 [package]
-name = "dagaostore"
+name = "dagao"
 version = "0.1.0"
 authors = ["Nathan Wilcox <nathan@z.cash>"]
 

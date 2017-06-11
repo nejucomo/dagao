@@ -6,35 +6,35 @@ use datanode;
 use linknode;
 
 
-pub struct DagaoStore {
+pub struct Store {
     #[allow(dead_code)]
     indexdir: PathBuf,
 
     hstore: HashStore,
 }
 
-impl DagaoStore {
-    pub fn create_std(basedir: &Path) -> io::Result<DagaoStore> {
+impl Store {
+    pub fn create_std(basedir: &Path) -> io::Result<Store> {
         try!(ensure_dir_exists(basedir));
-        DagaoStore::create(basedir.join("index").as_path(),
-                           try!(HashStore::create(basedir.join("store").as_path())))
+        Store::create(basedir.join("index").as_path(),
+                      try!(HashStore::create(basedir.join("store").as_path())))
     }
 
-    pub fn create(indexdir: &Path, hashstore: HashStore) -> io::Result<DagaoStore> {
+    pub fn create(indexdir: &Path, hashstore: HashStore) -> io::Result<Store> {
         try!(ensure_dir_exists(indexdir));
-        DagaoStore::open(indexdir, hashstore)
+        Store::open(indexdir, hashstore)
     }
 
-    pub fn open_std(basedir: &Path) -> io::Result<DagaoStore> {
-        DagaoStore::open(basedir.join("index").as_path(),
-                         try!(HashStore::open(basedir.join("store").as_path())))
+    pub fn open_std(basedir: &Path) -> io::Result<Store> {
+        Store::open(basedir.join("index").as_path(),
+                    try!(HashStore::open(basedir.join("store").as_path())))
     }
 
-    pub fn open(indexdir: &Path, hashstore: HashStore) -> io::Result<DagaoStore> {
+    pub fn open(indexdir: &Path, hashstore: HashStore) -> io::Result<Store> {
         match fs::read_dir(indexdir) {
             Err(e) => Err(e),
             Ok(_) => {
-                Ok(DagaoStore {
+                Ok(Store {
                     indexdir: indexdir.to_owned(),
                     hstore: hashstore,
                 })
@@ -104,7 +104,7 @@ mod tests {
     tests_with_fs! {
         create_new_dir |path: &Path| {
             use std::{fs, io};
-            use DagaoStore;
+            use Store;
 
             let exists_as_dir = |p: &Path| {
                 match fs::metadata(p) {
@@ -120,7 +120,7 @@ mod tests {
 
             assert!(!exists_as_dir(path));
 
-            res_unwrap!(DagaoStore::create_std(path));
+            res_unwrap!(Store::create_std(path));
 
             assert!(exists_as_dir(path));
             assert!(exists_as_dir(path.join("index").as_path()));
@@ -141,9 +141,9 @@ mod tests {
             use std::fs;
             use std::io::Read;
             use hashstore::{EMPTY_HASH};
-            use {DagaoStore, RefType};
+            use {Store, RefType};
 
-            let ds = res_unwrap!(DagaoStore::create_std(path));
+            let ds = res_unwrap!(Store::create_std(path));
             let ins = res_unwrap!(ds.open_datanode_inserter());
             let href = res_unwrap!(ins.commit());
             println!("href {:?}, EMPTY_HASH {:?}", href, EMPTY_HASH);
@@ -167,11 +167,11 @@ mod tests {
 
         insert_empty_linknode |path: &Path| {
             use std::fs;
-            use {DagaoStore, RefType};
+            use {Store, RefType};
 
             const EMPTY_LINKNODE: &'static str = "PJJ13v6y0SzJ88yEvzH5ng7qAYURX3omv4NFJYG35fQ";
 
-            let ds = res_unwrap!(DagaoStore::create_std(path));
+            let ds = res_unwrap!(Store::create_std(path));
             let ins = res_unwrap!(ds.open_linknode_inserter());
             let href = res_unwrap!(ins.commit());
             println!("href {:?}", href);

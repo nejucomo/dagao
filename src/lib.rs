@@ -6,12 +6,12 @@ extern crate hashstore;
 #[macro_use]
 mod testutils;
 
-mod dagaostore;
+mod store;
 mod ioutil;
 mod reference;
 
 // Library Public API:
 pub mod datanode;
 pub mod linknode;
-pub use dagaostore::DagaoStore;
+pub use store::Store;
 pub use reference::{Reference, RefType};
